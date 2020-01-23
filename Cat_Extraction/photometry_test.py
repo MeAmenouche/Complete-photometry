@@ -23,7 +23,7 @@ def gaia_cat(sci_img, bk_gr, cat, radius, mypath='/Users/melissa/Phd/'):
         sci_img : ZTF sciimg from which we want to extract sources     
         bk_gr : 0 or 1; When 0 astrobject doesn't estimate the back_ground of teh image
         (becaise ZTF sciimage are not substracted from back-ground)
-        cat :  corresponds to teh catalogur from which astrobject exratct the sources
+        cat :  corresponds to the catalogur from which astrobject exratct the sources
             (can be gaia, sdss...)
         radius : 
             
@@ -86,9 +86,11 @@ class Star(object):
         for i in range(len(list_Img)):
             for (repertoire, sousRepertoires, fichiers) in os.walk(os.path.join(my_path, 'ZTF/2018/')):
                 if  list_Img[i] in fichiers:
-                    path.append(os.path.join(repertoire, list_Img[i]))
+                    #path.append(os.path.join(repertoire, list_Img[i]))
+                    path.append(repertoire)
       
         return list_Img, path
+        
    
     
     def matching_data(self, obsGAIA, listImg, path, dist, gaia_sources, my_path = '/Users/melissa/Phd/', 
@@ -114,11 +116,87 @@ class Star(object):
         fail = []
         
         for i in range(len(listImg)):
+            try:
+                
+                if listImg[i][38:len(listImg[i])] == data_type :
+                
+                    
+                    count += 1
+                    #fImg = fits.open(path[i])
+                    fImg = fits.open(os.path.join(path[i], list_Img[i]))
+                
+                    dataImg = fImg[1].data
+                    dataImgH = fImg[0].header
+                    obsmjdImg = dataImgH["OBSMJD"]
+                    #print(obsmjdImg)
+                    fieldImg = dataImgH["FIELDID"] 
+                    filterImg = dataImgH["FILTERID"]
+                    
+                    #raImg, decImg,X, Y, fluxImg, errfluxImg, magImg, errmagImg = dataImg["ra"], dataImg["dec"], dataImg["xpos"], dataImg["ypos"], dataImg["flux"], 
+                    #dataImg["sigflux"], dataImg['mag']+dataImgH["MAGZP"], dataImg['sigmag']
+                
+                    raImg, decImg = dataImg["ra"], dataImg["dec"]
+                    X, Y = dataImg["xpos"], dataImg["ypos"]
+                    fluxImg, errfluxImg = dataImg["flux"], dataImg["sigflux"]
+                    magImg, errmagImg = dataImg['mag']+dataImgH["MAGZP"], dataImg['sigmag']
+                
+                    obsImg = SkyCoord(ra=raImg*u.degree, dec=decImg*u.degree)
+                    #idx, d2dSN, d3dSN = obsImg.match_to_catalog_sky(obsGAIA)
+                    idx, d2dSN, d3dSN = obsImg.match_to_catalog_sky(obsGAIA)
+                    d2dSNarcsec = d2dSN.to("arcsec").value
+                    flagin = (d2dSNarcsec<dist)
+                    d2dflag = d2dSNarcsec[flagin]
+                    idx_Img = np.arange(len(idx))[flagin]
+                    idx_source = idx[flagin]
+                
+                    ra_sources = [gaia_sources['RA_ICRS'][i] for i in idx_source]
+                    dec_sources = [gaia_sources['DE_ICRS'][i] for i in idx_source]
+                
+                    for k,j,l in zip(idx_Img, ra_sources, dec_sources):
+                        #print(j)
+                        dat_2 = {"ra": [raImg[k]], "dec": [decImg[k]], "X": [X[k]], 
+                                 "Y": [Y[k]], "flux": [fluxImg[k]], "err_f": [errfluxImg[k]], 
+                                 "mag": [magImg[k]], "err_m": [errmagImg[k]], "filter_id": filterImg, "src": path[i]}
+                    
+                        #dat_2 = {'mag': [magImg[k]], "ra": [raImg[k]], "src": path[i]}
+                        data_2 = pd.DataFrame(data=dat_2)
+                    
+                        #data_2 = pd.DataFrame(data=dat_2)
+        
+                        #path_source = my_path"/ZTF/stars_info/"+ffcq+"/source_"+str(j)+"_"+str(l)+".csv"
+                        path_source = os.path.join(my_path, "ZTF/stars_info/", ffcq, "source_"+str(j)+"_"+str(l)+".csv")
+                    
+                        test_file = os.path.exists(path_source)
+                        if test_file == True:
+                            data_1 = pd.read_csv(path_source)
+                            data_1.drop(data_1.columns[data_1.columns.str.contains('unnamed',case = False)],axis = 1, inplace = True)
+                            new = data_1.append(data_2)
+                            new.to_csv(path_source)
+                            print('existed', i, path_source)
+                        if test_file == False:
+                            print('new', i, path_source)
+                            data_new = data_2
+                            data_new.to_csv(path_source)
+            
+            except:
+                fail.append(path[i])
+                
+        
+        return fail
+        
+        
+    def test_match(self,  obsGAIA, listImg, path, dist, gaia_sources, my_path = '/Users/melissa/Phd/', 
+                      data_type = "psfcat.fits"):
+        
+        """Same function as matching_data but for one source (cad my gaia cat is one source)
+        """
+        list_idx = []
+        count = 0
+        for i in range(len(listImg)):
             #try:
                 
             if listImg[i][38:len(listImg[i])] == data_type :
-                print(i, count)
-                    
+                print(i)
                 count += 1
                 fImg = fits.open(path[i])
                 
@@ -138,45 +216,20 @@ class Star(object):
                 magImg, errmagImg = dataImg['mag']+dataImgH["MAGZP"], dataImg['sigmag']
                 
                 obsImg = SkyCoord(ra=raImg*u.degree, dec=decImg*u.degree)
-                idx, d2dSN, d3dSN = obsImg.match_to_catalog_sky(obsGAIA)
+                idx, d2dSN, d3dSN = obsGAIA.match_to_catalog_sky(obsImg)
+                
                 d2dSNarcsec = d2dSN.to("arcsec").value
+                
                 flagin = (d2dSNarcsec<dist)
-                d2dflag = d2dSNarcsec[flagin]
-                idx_Img = np.arange(len(idx))[flagin]
-                idx_source = idx[flagin]
-    
-                ra_sources = [gaia_sources['RA_ICRS'][i] for i in idx_source]
-                dec_sources = [gaia_sources['DE_ICRS'][i] for i in idx_source]
-                    
-                for k,j,l in zip(idx_Img, ra_sources, dec_sources):
                 
-                    dat_2 = {"ra": [raImg[k]], "dec": [decImg[k]], "X": [X[k]], 
-                             "Y": [Y[k]], "flux": [fluxImg[k]], "err_f": [errfluxImg[k]], 
-                             "mag": [magImg[k]], "err_m": [errmagImg[k]], "filter_id": filterImg, "src": path[i]}
+                #idx_Img = np.arange(len(idx))[flagin]
+                idx_ = np.array([idx])
+                idx_Img = idx_[flagin]
+                list_idx.append(len(idx_Img))
+                #ra_sources = [gaia_sources['RA_ICRS'][i] for i in idx_source]
+                #dec_sources = [gaia_sources['DE_ICRS'][i] for i in idx_source]
                 
-                    data_2 = pd.DataFrame(data=dat_2)
-        
-                    #path_source = my_path"/ZTF/stars_info/"+ffcq+"/source_"+str(j)+"_"+str(l)+".csv"
-                    path_source = os.path.join(my_path, "ZTF/stars_info/", ffcq, "source_"+str(j)+"_"+str(l)+".csv")
-                    
-                    test_file = os.path.exists(path_source)
-                    if test_file == True:
-                        data_1 = pd.read_csv(path_source)
-                        data_1.drop(data_1.columns[data_1.columns.str.contains('unnamed',case = False)],axis = 1, inplace = True)
-                        new = data_1.append(data_2)
-                        new.to_csv(path_source)
-                        print('existed', i, path_source)
-                    if test_file == False:
-                        print('new', i, path_source)
-                        data_new = data_2
-                        data_new.to_csv(path_source)
-            
-            #except:
-            fail.append(path[i])
-            #print('here2')
-        
-        #return fail
-        
+        return list_idx, count
     
     def matching_ztf(self, obsGAIA, listImg, dist, gaia_sources, my_path = '/Users/melissa/Phd/',
                      ffcq = "F_000762_zg_c06_q2"):
@@ -188,56 +241,56 @@ class Star(object):
         fail = []
         
         for i in range(len(listImg)):
-            try:
-                count += 1
-                fImg = fits.open(path[i])
-                dataImg = fImg[1].data
-                dataImgH = fImg[0].header
-                obsmjdImg = dataImgH["OBSMJD"]
-                #print(obsmjdImg)
-                fieldImg = dataImgH["FIELDID"] 
-                filterImg = dataImgH["FILTERID"]
+            #try:
+            count += 1
+            fImg = fits.open(path[i])
+            dataImg = fImg[1].data
+            dataImgH = fImg[0].header
+            obsmjdImg = dataImgH["OBSMJD"]
+            #print(obsmjdImg)
+            fieldImg = dataImgH["FIELDID"] 
+            filterImg = dataImgH["FILTERID"]
                 
-                raImg, decImg = dataImg["ra"], dataImg["dec"]
-                X, Y = dataImg["xpos"], dataImg["ypos"]
-                fluxImg, errfluxImg = dataImg["flux"], dataImg["sigflux"]
-                magImg, errmagImg = dataImg['mag']+dataImgH["MAGZP"], dataImg['sigmag']
+            raImg, decImg = dataImg["ra"], dataImg["dec"]
+            X, Y = dataImg["xpos"], dataImg["ypos"]
+            fluxImg, errfluxImg = dataImg["flux"], dataImg["sigflux"]
+            magImg, errmagImg = dataImg['mag']+dataImgH["MAGZP"], dataImg['sigmag']
                     
-                obsImg = SkyCoord(ra=raImg*u.degree, dec=decImg*u.degree)
-                idx, d2dSN, d3dSN = obsImg.match_to_catalog_sky(obsGAIA)
-                d2dSNarcsec = d2dSN.to("arcsec").value
-                flagin = (d2dSNarcsec<dist)
-                d2dflag = d2dSNarcsec[flagin]
-                idx_Img = np.arange(len(idx))[flagin]
-                idx_source = idx[flagin]
+            obsImg = SkyCoord(ra=raImg*u.degree, dec=decImg*u.degree)
+            idx, d2dSN, d3dSN = obsImg.match_to_catalog_sky(obsGAIA)
+            d2dSNarcsec = d2dSN.to("arcsec").value
+            flagin = (d2dSNarcsec<dist)
+            d2dflag = d2dSNarcsec[flagin]
+            idx_Img = np.arange(len(idx))[flagin]
+            idx_source = idx[flagin]
         
-                ra_sources = [gaia_sources['RA_ICRS'][i] for i in idx_source]
-                dec_sources = [gaia_sources['DE_ICRS'][i] for i in idx_source]
+            ra_sources = [gaia_sources['RA_ICRS'][i] for i in idx_source]
+            dec_sources = [gaia_sources['DE_ICRS'][i] for i in idx_source]
                 
-                for k,j,l in zip(idx_Img, ra_sources, dec_sources):
+            for k,j,l in zip(idx_Img, ra_sources, dec_sources):
                 
-                    dat_2 = {"ra": [raImg[k]], "dec": [decImg[k]], "X": [X[k]], 
-                                "Y": [Y[k]], "flux": [fluxImg[k]], "err_f": [errfluxImg[k]], 
-                                "mag": [magImg[k]], "err_m": [errmagImg[k]], "filter_id": filterImg, "src": path[i]}
+                dat_2 = {"ra": [raImg[k]], "dec": [decImg[k]], "X": [X[k]], 
+                         "Y": [Y[k]], "flux": [fluxImg[k]], "err_f": [errfluxImg[k]], 
+                         "mag": [magImg[k]], "err_m": [errmagImg[k]], "filter_id": filterImg, "src": path[i]}
                     
-                    data_2 = pd.DataFrame(data=dat_2)
+                data_2 = pd.DataFrame(data=dat_2)
                     
-                    path_source = my_path/"ZTF/stars_info/"+ffcq+"/source_"+str(j)+"_"+str(l)+".csv"
+                path_source = my_path/"ZTF/stars_info/"+ffcq+"/source_"+str(j)+"_"+str(l)+".csv"
                     
-                    test_file = pathi.exists(path_source)
-                    if test_file == True:
-                        data_1 = pd.read_csv(path_source)
-                        data_1.drop(data_1.columns[data_1.columns.str.contains('unnamed',case = False)],axis = 1, inplace = True)
-                        new = data_1.append(data_2)
-                        new.to_csv(path_source)
-                        print('existed', i, path_source)
-                    if test_file == False:
-                        print('new', i, path_source)
-                        data_new = data_2
-                        data_new.to_csv(path_source)
+                test_file = pathi.exists(path_source)
+                if test_file == True:
+                    data_1 = pd.read_csv(path_source)
+                    data_1.drop(data_1.columns[data_1.columns.str.contains('unnamed',case = False)],axis = 1, inplace = True)
+                    new = data_1.append(data_2)
+                    new.to_csv(path_source)
+                    print('existed', i, path_source)
+                if test_file == False:
+                    print('new', i, path_source)
+                    data_new = data_2
+                    data_new.to_csv(path_source)
             
-            except:
-                fail.append(path[i])
+            #except:
+            #    fail.append(path[i])
                 
         
     def stat_sources(self, gaia_sources, ffcq = "F_000762_zg_c06_q2",
@@ -258,26 +311,24 @@ class Star(object):
         count = 0
         for w,v in zip(sources_ra, sources_dec):
             count += 1
-            #try:
-            path_ = os.path.join(my_path, "ZTF/stars_info/", ffcq, "source_"+str(w)+"_"+str(v)+".csv")
-            #path_ = my_path/"ZTF/stars_info/"+ffcq+"/source_"+str(w)+"_"+str(v)+".csv"
-            files = pd.read_csv(path_)
-            data_g = files[files['filter_id'] == filter_]
-                
-            nb_data_, __ = data_g.shape
-            nb_data.append(nb_data_)
-            mean_source = np.mean(data_g['mag'])
-            mean_mag.append(mean_source)
-            median_source = np.median(data_g['mag'])
-            median_mag.append(median_source)
-            std_source = np.std(data_g['mag'])
-            std_mag.append(std_source)
-        
-            ra.append(str(w))
-            dec.append(str(v))
+            try:
+                path_ = os.path.join(my_path, "ZTF/stars_info/", ffcq, "source_"+str(w)+"_"+str(v)+".csv")
+                #path_ = my_path/"ZTF/stars_info/"+ffcq+"/source_"+str(w)+"_"+str(v)+".csv"
+                files = pd.read_csv(path_)
+                data_g = files[files['filter_id'] == filter_]
+                nb_data_, __ = data_g.shape
+                nb_data.append(nb_data_)
+                mean_source = np.mean(data_g['mag'])
+                mean_mag.append(mean_source)
+                median_source = np.median(data_g['mag'])
+                median_mag.append(median_source)
+                std_source = np.std(data_g['mag'])
+                std_mag.append(std_source)
+                ra.append(str(w))
+                dec.append(str(v))
             
-            #except:
-            file_unfound.append(path_)
+            except:
+                file_unfound.append(path_)
                 
         #build up a pd dataframe with the collected data
         donnees_ = {"ra": ra, "dec": dec, "median_m": median_mag, "std_m": std_mag,
@@ -288,8 +339,4 @@ class Star(object):
         
         return data_sources, path_
     
-"""class Star_list(Star):
-    def __init__(self):
-        
-Star.__init__(self, Ra, Dec)
-"""      
+
